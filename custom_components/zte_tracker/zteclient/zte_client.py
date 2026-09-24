@@ -33,6 +33,8 @@ _LOGGER = logging.getLogger(__name__)
 
 _MODELS = {
     "F6640": {
+        "refresh_after_login": True,
+        "dhcp_hostnames": True,
         "wlan_script": "wlan_client_stat_lua.lua",
         "wlan_id_element": "OBJ_WLAN_AD_ID",
         "lan_script": "accessdev_landevs_lua.lua",
@@ -204,7 +206,7 @@ class zteClient:
             }
         )
 
-        if self.mesh_topology:
+        if self.mesh_topology or self.paths.get("refresh_after_login", False):
             # Mesh topology requires browser-like session initialization:
             # 1. Page load to set cookies (_TESTCOOKIESUPPORT / SID)
             # 2. XHR headers for subsequent API calls
@@ -320,7 +322,7 @@ class zteClient:
             # Handle refresh requirement
             if self.login_data.get("login_need_refresh") == 1:
                 _LOGGER.debug("Login refresh required")
-                if self.mesh_topology:
+                if self.mesh_topology or self.paths.get("refresh_after_login", False):
                     try:
                         self.session.get(
                             f"{self.base_url}/",
@@ -425,11 +427,56 @@ class zteClient:
             if wifi_devices:
                 devices.extend(wifi_devices)
 
+            if self.paths.get("dhcp_hostnames") and any(
+                not device.get("HostName") for device in devices
+            ):
+                names = self.get_dhcp_hostnames()
+                for device in devices:
+                    key = (device.get("MACAddress", "").upper(), device.get("IPAddress", ""))
+                    if not device.get("HostName") and key in names:
+                        device["HostName"] = names[key]
+
             return devices
 
         except Exception as e:
             _LOGGER.error("Error getting device response: %s", e)
             return None
+
+    def get_dhcp_hostnames(self) -> dict[tuple[str, str], str]:
+        """Fill blank client names from matching router DHCP leases.
+
+        The F8648P leaves HostName empty for some bridged clients in its
+        LAN-status response, although DHCP reports their advertised names.
+        Match both MAC and IP to avoid borrowing a stale lease's identity.
+        """
+        try:
+            if not self.session:
+                return {}
+            for kind, tag in (
+                ("menuView", "lanMgrIpv4"),
+                ("menuData", "Localnet_LanMgrIpv4_DHCPHostInfo_lua.lua"),
+            ):
+                response = self.session.get(
+                    f"{self.base_url}/?_type={kind}&_tag={tag}&_={self.get_guid()}",
+                    verify=self.verify_ssl,
+                    timeout=10,
+                )
+                response.raise_for_status()
+            root = ET.fromstring(response.text)
+            if root.findtext("IF_ERRORSTR") not in (None, "", "SUCC", "SUCCESS", "OK"):
+                return {}
+            names = {}
+            for node in root.findall("OBJ_DHCPHOSTINFO_ID/Instance"):
+                lease = self._parse_instance(node, coerce_numeric=False)
+                mac = lease.get("MACAddr", "").strip().upper()
+                address = lease.get("IPAddr", "").strip()
+                name = lease.get("HostName", "").strip()
+                if mac and address and name:
+                    names[(mac, address)] = name
+            return names
+        except (requests.RequestException, ET.ParseError, ValueError):
+            _LOGGER.debug("Router DHCP names unavailable; retaining client-list names")
+            return {}
 
     def get_lan_devices(self) -> list[dict[str, Any]] | None:
         """Get the list of devices connected to the LAN ports."""
