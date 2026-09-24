@@ -1,3 +1,15 @@
+# ZTE Tracker with F8648P compatibility fixes
+
+This repository maintains a downstream version of [juacas/zte_tracker](https://github.com/juacas/zte_tracker), preserving its GPL-3.0 license and history. Version 2.1.2 includes DHCP hostname fallback (matching both MAC and IP) and login refresh handling for F8648P routers using the F6640 profile.
+
+In HACS, add `https://github.com/dennisotugo/ha-zte-tracker` as a custom repository with category **Integration**, then download its latest release and restart Home Assistant. Keep only this repository installed for the `zte_tracker` integration; do not install the upstream repository alongside it. Existing ZTE configuration and entity identities are preserved.
+
+For F8648P, use the **F6640** model profile. Configure the router address and credentials through Home Assistant; never put credentials in this repository. Changes to this downstream version can be reported in [this repository's issues](https://github.com/dennisotugo/ha-zte-tracker/issues).
+
+The original upstream documentation and attribution follow.
+
+---
+
 ![GitHub](https://img.shields.io/github/license/juacas/zte_tracker)
 ![GitHub Repo stars](https://img.shields.io/github/stars/juacas/zte_tracker)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/juacas/zte_tracker)
